@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  webapp:
+    build: .
+    container_name: ai-notes-webapp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./audio:/app/audio
+      - ./notes:/app/notes
+      - ./frontend:/app/frontend
+    command: python app.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/recorder/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ai-notes-network
+
+  recorder:
+    build: .
+    container_name: ai-notes-recorder
+    restart: unless-stopped
+    devices:
+      - /dev/snd:/dev/snd
+    volumes:
+      - ./audio:/app/audio
+      - ./notes:/app/notes
+      - ./backend:/app/backend
+    command: python backend/recorder.py --start --continuous
+    depends_on:
+      - webapp
+    networks:
+      - ai-notes-network
+
+networks:
+  ai-notes-network:
+    driver: bridge
