@@ -4,8 +4,8 @@
 """
 import re
 import logging
-from nltk.probability import FreqDist
-from nltk.corpus import stopwords
+import importlib.util
+import sys
 
 # Настройка логирования
 logging.basicConfig(
@@ -14,12 +14,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Расширенный список стоп-слов для русского языка
+# Проверяем доступность необходимых модулей
+# В Python 3.13 некоторые старые модули и методы могут быть удалены
+
+# Установка совместимости для pymorphy2 с Python 3.13+
+if sys.version_info >= (3, 13):
+    import inspect
+    if not hasattr(inspect, 'getargspec'):
+        inspect.getargspec = lambda func: inspect.getfullargspec(func)[:4]
+
 try:
-    STOPWORDS = set(stopwords.words('russian'))
-except:
-    # Если NLTK не установлен или русские стоп-слова недоступны, используем базовый список
-    STOPWORDS = set()
+    from nltk.probability import FreqDist
+    from nltk.corpus import stopwords
+    NLTK_AVAILABLE = True
+except ImportError:
+    logger.warning("NLTK не установлен. Используем базовую функциональность.")
+    NLTK_AVAILABLE = False
+
+# Проверяем наличие pymorphy2
+try:
+    import pymorphy2
+    PYMORPHY_AVAILABLE = True
+    morph = pymorphy2.MorphAnalyzer()
+except ImportError:
+    logger.warning("PyMorphy2 не установлен. Используем упрощенную нормализацию слов.")
+    PYMORPHY_AVAILABLE = False
+except Exception as e:
+    logger.error(f"Ошибка при инициализации PyMorphy2: {e}")
+    PYMORPHY_AVAILABLE = False
+
+# Проверяем наличие scikit-learn для тематического моделирования
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.decomposition import LatentDirichletAllocation
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    logger.warning("Scikit-learn не установлен. Тематическое моделирование недоступно.")
+    SKLEARN_AVAILABLE = False
+
+# Расширенный список стоп-слов для русского языка
+STOPWORDS = set()
+if NLTK_AVAILABLE:
+    try:
+        STOPWORDS = set(stopwords.words('russian'))
+    except:
+        logger.warning("Русские стоп-слова NLTK недоступны. Используем базовый список.")
 
 # Дополняем список стоп-слов
 STOPWORDS.update([
@@ -31,6 +70,40 @@ STOPWORDS.update([
     "и", "а", "но", "что", "то", "с", "по", "за", "от", "из", "у", "о", "об", "я", "мы", "они", "он", "она", "оно",
     "все", "весь", "вся", "меня", "тебя", "его", "её", "нас", "вас", "их", "мой", "твой", "свой", "наш", "ваш"
 ])
+
+# Предопределенные категории и ключевые слова/фразы для них
+CATEGORIES = {
+    "бизнес": ["проект", "встреча", "клиент", "продажа", "маркетинг", "стратегия", "бюджет", "прибыль", 
+               "компания", "бизнес", "партнер", "контракт", "сделка", "переговоры", "презентация"],
+    "техническое": ["код", "программирование", "разработка", "баг", "фича", "алгоритм", "система", "технология",
+                   "приложение", "сервер", "база данных", "фреймворк", "библиотека", "интеграция", "деплой"],
+    "образование": ["обучение", "курс", "студент", "преподаватель", "задание", "экзамен", "лекция", "учеба",
+                   "образование", "знание", "навык", "практика", "теория", "учитель", "материал"],
+    "личное": ["семья", "друзья", "отпуск", "хобби", "здоровье", "дом", "отдых", "личное", "жизнь", 
+               "эмоции", "настроение", "впечатление", "чувства", "отношения"],
+    "планирование": ["план", "цель", "задача", "дедлайн", "расписание", "приоритет", "график", "сроки", 
+                    "проектирование", "оценка", "распределение", "этапы", "последовательность"],
+    "отчет": ["результат", "статус", "прогресс", "отчет", "показатель", "метрика", "анализ", "итоги", 
+             "выводы", "сравнение", "измерение", "оценка результатов", "подведение итогов"]
+}
+
+# Ключевые индикаторы различных типов назначения разговора
+PURPOSE_INDICATORS = {
+    "брейншторм": ["идея", "придумать", "обсудить варианты", "мозговой штурм", "креативный", 
+                  "давайте подумаем", "как насчет", "предложение", "вариант", "концепция"],
+    "обсуждение проблемы": ["проблема", "сложность", "трудность", "решение", "исправить", "ошибка", 
+                           "не работает", "сбой", "недостаток", "преодолеть", "устранить"],
+    "планирование": ["план", "график", "дедлайн", "сроки", "следующий шаг", "этапы", "распределить", 
+                    "запланировать", "календарь", "расписание", "дорожная карта"],
+    "принятие решения": ["решение", "выбор", "решить", "определить", "согласовать", "утвердить", 
+                        "остановиться на", "выбрать", "предпочтение", "окончательно"],
+    "информирование": ["сообщить", "информация", "данные", "отчет", "статус", "новость", 
+                      "извещение", "уведомить", "рассказать", "поделиться информацией"],
+    "обучение": ["объяснить", "научить", "разобрать", "понять как", "методика", "инструкция", 
+                "техника", "обучение", "тренинг", "изучение", "пример"],
+    "обратная связь": ["фидбек", "обратная связь", "мнение", "оценка", "как тебе", "что думаешь", 
+                      "твое мнение", "впечатление", "комментарий", "отзыв"]
+}
 
 def clean_text(text):
     """Очищает текст от спецсимволов и приводит к нижнему регистру."""
@@ -62,6 +135,27 @@ def normalize_word(word):
     
     return word
 
+def normalize_word_improved(word):
+    """
+    Улучшенная нормализация слова для русского языка с использованием PyMorphy2.
+    
+    Args:
+        word (str): Слово для нормализации
+        
+    Returns:
+        str: Нормализованная форма слова
+    """
+    if PYMORPHY_AVAILABLE:
+        try:
+            # Получаем нормальную форму слова (лемму)
+            parsed = morph.parse(word)[0]
+            return parsed.normal_form
+        except Exception as e:
+            logger.debug(f"Ошибка при нормализации с PyMorphy2: {e}")
+            return normalize_word(word)
+    else:
+        return normalize_word(word)
+
 def extract_keywords(text, max_tags=10, min_word_length=4, min_frequency=1):
     """
     Извлекает ключевые слова из текста для использования в качестве тегов.
@@ -87,8 +181,8 @@ def extract_keywords(text, max_tags=10, min_word_length=4, min_frequency=1):
                 token not in STOPWORDS and 
                 not token.isdigit() and
                 not all(c == '-' for c in token)):
-                # Упрощенная нормализация
-                normal_form = normalize_word(token)
+                # Улучшенная нормализация, если доступна
+                normal_form = normalize_word_improved(token)
                 if len(normal_form) >= min_word_length:
                     filtered_tokens.append(normal_form)
         
@@ -166,27 +260,170 @@ def extract_keyphrases(text, max_phrases=5, min_phrase_words=2, max_phrase_words
         logger.error(f"Ошибка при извлечении ключевых фраз: {e}")
         return []
 
-def generate_tags(text, max_keywords=7, max_phrases=3):
+def classify_conversation(text):
     """
-    Генерирует теги на основе текста, используя комбинацию ключевых слов и фраз.
+    Классифицирует разговор по предопределенным категориям.
+    
+    Args:
+        text (str): Текст транскрипции
+        
+    Returns:
+        list: Список категорий разговора
+    """
+    # Очищаем и нормализуем текст
+    clean = clean_text(text)
+    
+    # Определяем категории по наличию ключевых слов/фраз
+    matched_categories = set()  # Используем множество для уникальности
+    for category, keywords in CATEGORIES.items():
+        for keyword in keywords:
+            if keyword in clean:
+                matched_categories.add(category)
+                break
+    
+    return list(matched_categories)
+
+def determine_conversation_purpose(text):
+    """
+    Определяет назначение разговора.
+    
+    Args:
+        text (str): Текст транскрипции
+        
+    Returns:
+        dict: Вероятность каждого назначения и основное назначение
+    """
+    # Очищаем текст
+    clean = clean_text(text)
+    
+    # Ищем индикаторы назначения
+    scores = {purpose: 0 for purpose in PURPOSE_INDICATORS}
+    for purpose, indicators in PURPOSE_INDICATORS.items():
+        for indicator in indicators:
+            if indicator in clean:
+                scores[purpose] += 1
+    
+    # Нормализуем баллы в проценты для общей суммы 100%
+    total_score = sum(scores.values())
+    if total_score > 0:
+        percentages = {purpose: (score / total_score) * 100 for purpose, score in scores.items()}
+    else:
+        percentages = {purpose: 0 for purpose in PURPOSE_INDICATORS}
+    
+    # Определяем основное назначение
+    main_purpose = "общее обсуждение"  # По умолчанию
+    best_purpose, best_score = max(scores.items(), key=lambda x: x[1])
+    if best_score >= 2:
+        main_purpose = best_purpose
+    
+    # Сортируем назначения по вероятности (от большей к меньшей)
+    sorted_purposes = sorted(percentages.items(), key=lambda x: x[1], reverse=True)
+    
+    return {
+        "main_purpose": main_purpose,
+        "purpose_probabilities": percentages,
+        "sorted_purposes": sorted_purposes
+    }
+
+def extract_topics_with_model(text, num_topics=3):
+    """
+    Извлекает темы из текста с использованием тематического моделирования.
+    
+    Args:
+        text (str): Текст транскрипции
+        num_topics (int): Количество тем для извлечения
+        
+    Returns:
+        list: Список тем разговора
+    """
+    if not SKLEARN_AVAILABLE or len(text) < 200:  # Требуется минимальный объем текста
+        return []
+    
+    try:
+        # Очистка текста
+        clean = clean_text(text)
+        
+        # Конвертируем множество стоп-слов в список для совместимости с новыми версиями scikit-learn
+        stopwords_list = list(STOPWORDS) if STOPWORDS else None
+        
+        # Векторизация текста
+        vectorizer = TfidfVectorizer(max_features=1000, 
+                                     stop_words=stopwords_list)
+        X = vectorizer.fit_transform([clean])
+        
+        # Проверка, достаточно ли у нас слов для моделирования
+        if X.shape[1] < 10:
+            return []
+        
+        # Тематическое моделирование
+        n_components = min(num_topics, X.shape[1] // 3)  # Не больше 1/3 от числа признаков
+        if n_components == 0:
+            return []
+        
+        lda = LatentDirichletAllocation(n_components=n_components, random_state=42)
+        lda.fit(X)
+        
+        # Получение ключевых слов для каждой темы
+        feature_names = vectorizer.get_feature_names_out()
+        topics = []
+        for topic_idx, topic in enumerate(lda.components_):
+            top_words = [feature_names[i] for i in topic.argsort()[:-5-1:-1]]
+            topics.append(" ".join(top_words))
+        
+        return topics
+    
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении тем с помощью модели: {e}")
+        return []
+
+def generate_tags(text, max_keywords=7, max_phrases=3, classify=True):
+    """
+    Генерирует теги на основе текста, используя комбинацию ключевых слов, фраз и классификации.
     
     Args:
         text (str): Текст для анализа
         max_keywords (int): Максимальное количество ключевых слов
         max_phrases (int): Максимальное количество ключевых фраз
+        classify (bool): Выполнять ли классификацию разговора
     
     Returns:
-        dict: Словарь с ключевыми словами и фразами
+        dict: Словарь с ключевыми словами, фразами, категориями и темами
     """
+    # Проверяем, что у нас есть текст для анализа
+    if not text or len(text.strip()) < 10:
+        return {
+            "keywords": [],
+            "keyphrases": [],
+            "categories": [],
+            "topics": [],
+            "purpose": "неизвестно",
+            "purpose_details": {},
+            "all_tags": []
+        }
+    
     # Извлекаем ключевые слова и фразы
     keywords = extract_keywords(text, max_tags=max_keywords)
     keyphrases = extract_keyphrases(text, max_phrases=max_phrases)
     
-    # Формируем и возвращаем теги
+    # Классифицируем разговор, если нужно
+    categories = []
+    topics = []
+    purpose_info = {"main_purpose": "общее обсуждение", "purpose_probabilities": {}}
+    
+    if classify and len(text) > 100:  # Проверяем, что есть достаточно текста для анализа
+        categories = classify_conversation(text)
+        topics = extract_topics_with_model(text)
+        purpose_info = determine_conversation_purpose(text)
+    
+    # Формируем и возвращаем теги с дополнительной информацией
     return {
         "keywords": keywords,
         "keyphrases": keyphrases,
-        "all_tags": keywords + keyphrases
+        "categories": categories,
+        "topics": topics,
+        "purpose": purpose_info["main_purpose"],
+        "purpose_details": purpose_info,
+        "all_tags": keywords + keyphrases + categories
     }
 
 # Простой тест для проверки работы модуля
@@ -201,4 +438,7 @@ if __name__ == "__main__":
     
     tags = generate_tags(test_text)
     print("Ключевые слова:", tags["keywords"])
-    print("Ключевые фразы:", tags["keyphrases"]) 
+    print("Ключевые фразы:", tags["keyphrases"])
+    print("Категории:", tags["categories"])
+    print("Темы:", tags["topics"])
+    print("Назначение:", tags["purpose"]) 

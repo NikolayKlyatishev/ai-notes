@@ -5,8 +5,13 @@ import os
 import logging
 import json
 from datetime import datetime
-import whisper
-from pydub import AudioSegment
+# Обновляем импорт Whisper
+try:
+    import whisper
+    has_local_whisper = True
+except Exception as e:
+    has_local_whisper = False
+    print(f"Ошибка импорта локального whisper: {e}")
 
 import config
 from tagging import generate_tags
@@ -24,13 +29,31 @@ class Transcriber:
         """Инициализация транскрайбера с улучшенной моделью Whisper."""
         model_name = model_name or config.WHISPER_MODEL
         self.language = config.WHISPER_LANGUAGE if hasattr(config, 'WHISPER_LANGUAGE') else "ru"
+        self.model_name = model_name
         
-        logger.info(f"Загрузка модели Whisper: {model_name}")
+        if not has_local_whisper:
+            logger.error("Локальная модель Whisper не найдена или повреждена!")
+            raise ImportError("Не удалось импортировать whisper. Установите его через pip install git+https://github.com/openai/whisper.git")
+            
+        logger.info(f"Загрузка локальной модели Whisper: {model_name}")
         try:
-            self.model = whisper.load_model(model_name)
+            # Проверяем наличие метода load_model
+            if hasattr(whisper, 'load_model'):
+                self.model = whisper.load_model(model_name)
+            # В противном случае используем другой способ загрузки модели
+            else:
+                # Попробуем создать модель напрямую
+                logger.info("Метод load_model не найден, пробуем альтернативный способ загрузки")
+                from whisper import available_models
+                if model_name in available_models():
+                    self.model = whisper.Whisper.from_pretrained(model_name)
+                else:
+                    logger.error(f"Модель {model_name} не найдена. Доступные модели: {available_models()}")
+                    raise ValueError(f"Модель {model_name} не найдена.")
+                
             logger.info(f"Модель Whisper {model_name} успешно загружена")
         except Exception as e:
-            logger.error(f"Ошибка при загрузке модели Whisper: {e}")
+            logger.error(f"Ошибка при загрузке локальной модели Whisper: {e}")
             raise
 
     def transcribe(self, audio_file_path):
@@ -42,34 +65,36 @@ class Transcriber:
         try:
             logger.info(f"Начало транскрипции файла: {audio_file_path}")
             
-            # Преобразование файла в нужный формат, если это не WAV
+            # Проверяем, что файл в формате WAV
             if not audio_file_path.lower().endswith('.wav'):
-                logger.info(f"Конвертация файла {audio_file_path} в WAV формат")
-                audio = AudioSegment.from_file(audio_file_path)
-                wav_path = os.path.splitext(audio_file_path)[0] + ".wav"
-                audio.export(wav_path, format="wav")
-                audio_file_path = wav_path
-                logger.info(f"Файл конвертирован в {wav_path}")
+                logger.error(f"Файл {audio_file_path} не в формате WAV. Поддерживаются только WAV файлы.")
+                return None
             
+            # Используем локальную модель
             # Оптимизированные настройки для быстрой транскрипции русского языка
-            result = self.model.transcribe(
-                audio_file_path,
-                fp16=True,  # Используем fp16 для ускорения, если поддерживается
-                language=self.language,
-                initial_prompt="Это разговор на русском языке.",
-                beam_size=3,    # Уменьшаем размер луча для ускорения
-                best_of=1,      # Ускоряем, не генерируя множество вариантов
-                temperature=0.0, # Делаем детерминированным для скорости
-                condition_on_previous_text=True,  # Учитываем предыдущий текст
-                verbose=False    # Отключаем подробный вывод для скорости
-            )
+            # Обрабатываем разные версии API Whisper
+            try:
+                # Пробуем стандартный API
+                result = self.model.transcribe(
+                    audio_file_path,
+                    language=self.language,
+                    initial_prompt="Это разговор на русском языке."
+                )
+            except TypeError as e:
+                # Если стандартный API не работает, пробуем упрощенный вызов
+                logger.info(f"Используем упрощенный API вызов для Whisper: {e}")
+                result = self.model.transcribe(audio_file_path)
+                # Если результат не словарь, создаем совместимый формат
+                if not isinstance(result, dict):
+                    result = {"text": str(result), "segments": []}
             
             logger.info(f"Транскрипция завершена успешно")
             return result
-            
+                
         except Exception as e:
             logger.error(f"Ошибка при транскрибировании: {e}")
-            return None
+            # Возвращаем пустой результат вместо None для совместимости
+            return {"text": "", "segments": []}
 
     def save_transcript(self, transcript_data, audio_file_path):
         """Сохраняет транскрипт в JSON файл."""
@@ -108,6 +133,14 @@ class Transcriber:
         # Сохраняем ключевые слова и фразы отдельно
         note_data["tags"] = tags_data["keywords"]
         note_data["keyphrases"] = tags_data["keyphrases"]
+        
+        # Добавляем категории, цели и темы из генератора тегов
+        if "categories" in tags_data:
+            note_data["categories"] = tags_data["categories"]
+        if "purpose" in tags_data:
+            note_data["purpose"] = tags_data["purpose"]
+        if "topics" in tags_data:
+            note_data["topics"] = tags_data["topics"]
         
         try:
             logger.info(f"Сохранение транскрипта в {json_path}")

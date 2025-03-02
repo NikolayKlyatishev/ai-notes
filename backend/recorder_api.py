@@ -266,13 +266,24 @@ def get_recordings(limit: int = 10) -> Dict[str, List[Dict[str, Any]]]:
         file_size = os.path.getsize(wav_file) / (1024 * 1024)  # В МБ
         file_time = datetime.fromtimestamp(os.path.getmtime(wav_file))
         
-        # Получаем текст транскрипции, если есть
+        # Получаем текст транскрипции и метаданные, если есть
         transcript_text = ""
+        tags = []
+        categories = []
+        purpose = ""
+        topics = []
+        
         if has_transcript:
             try:
                 with open(json_file, 'r', encoding='utf-8') as f:
                     note_data = json.load(f)
                     transcript_text = note_data.get('transcript', '')[:100] + '...' if len(note_data.get('transcript', '')) > 100 else note_data.get('transcript', '')
+                    
+                    # Получаем теги и метаданные
+                    tags = note_data.get('tags', [])
+                    categories = note_data.get('categories', [])
+                    purpose = note_data.get('purpose', '')
+                    topics = note_data.get('topics', [])
             except Exception as e:
                 logger.error(f"Ошибка при чтении транскрипта {json_file}: {e}")
         
@@ -284,7 +295,11 @@ def get_recordings(limit: int = 10) -> Dict[str, List[Dict[str, Any]]]:
             "has_transcript": has_transcript,
             "transcript_file": os.path.basename(json_file) if has_transcript else None,
             "transcript_text": transcript_text if has_transcript else "",
-            "type": "audio"
+            "type": "audio",
+            "tags": tags,
+            "categories": categories,
+            "purpose": purpose,
+            "topics": topics
         })
     
     return {"recordings": recordings}
@@ -424,12 +439,30 @@ def transcribe_audio(audio_path: str, model: str = "base") -> Optional[Dict[str,
         text_content = result.get('text', '')
         if text_content:
             logger.info("Генерация тегов для транскрипта")
-            # Генерируем теги, только если их нет или они пустые
-            if 'tags' not in result or not result['tags']:
-                tags_data = generate_tags(text_content)
-                logger.info(f"Сгенерированы теги: {tags_data['keywords']}")
+            # Проверяем наличие тегов или необходимость их обновления
+            should_update_tags = (
+                'tags' not in result or 
+                not result['tags'] or 
+                'categories' not in result or 
+                'topics' not in result or
+                'purpose' not in result
+            )
+            
+            if should_update_tags:
+                # Генерируем расширенные теги с классификацией
+                tags_data = generate_tags(text_content, classify=True)
+                
+                # Обновляем результат с новыми данными
                 result["tags"] = tags_data["keywords"]
                 result["keyphrases"] = tags_data["keyphrases"]
+                result["categories"] = tags_data["categories"]
+                result["topics"] = tags_data["topics"]
+                result["purpose"] = tags_data["purpose"]
+                result["purpose_details"] = tags_data["purpose_details"]
+                
+                logger.info(f"Сгенерированы теги: {tags_data['keywords']}")
+                logger.info(f"Категории: {tags_data['categories']}")
+                logger.info(f"Назначение: {tags_data['purpose']}")
             else:
                 logger.info(f"Теги уже существуют: {result['tags']}")
             
@@ -437,8 +470,13 @@ def transcribe_audio(audio_path: str, model: str = "base") -> Optional[Dict[str,
             if 'transcript' not in result:
                 result['transcript'] = text_content
         else:
+            # Инициализируем пустые теги
             result["tags"] = []
             result["keyphrases"] = []
+            result["categories"] = []
+            result["topics"] = []
+            result["purpose"] = "неизвестно"
+            result["purpose_details"] = {}
             logger.warning("Пустой текст транскрипции, теги не генерируются")
         
         # Сохраняем результат в JSON
