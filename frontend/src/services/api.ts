@@ -89,7 +89,7 @@ export const apiService = {
     // Поиск
     search: {
         query: async (query: string): Promise<SearchResult> => {
-            const response = await api.post(API_ENDPOINTS.SEARCH.QUERY, { q: query });
+            const response = await api.post(API_ENDPOINTS.SEARCH.QUERY, { query: query });
             return response.data;
         },
     },

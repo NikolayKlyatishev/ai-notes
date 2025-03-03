@@ -102,7 +102,7 @@ class AudioRecorder:
             self.frames.append(data)
             
             # Проверка голосовой активности
-            if len(data) == 2048:  # 1024 сэмплов * 2 байта на сэмпл
+            if len(data) == 1024 * 2:  # 1024 сэмплов * 2 байта на сэмпл
                 is_speech = self.vad.is_speech(data, SAMPLE_RATE)
                 if not is_speech:
                     self.silence_frames += 1

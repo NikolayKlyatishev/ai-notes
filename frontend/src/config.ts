@@ -17,16 +17,16 @@ export const API_ENDPOINTS = {
   },
   // Заметки
   NOTES: {
-    BASE: '/api/notes/notes',
-    LIST: '/api/notes/notes/',
-    GET: (id: string) => `/api/notes/notes/${id}`,
-    CREATE: '/api/notes/notes/',
-    UPDATE: (id: string) => `/api/notes/notes/${id}`,
-    DELETE: (id: string) => `/api/notes/notes/${id}`,
+    BASE: '/api/notes',
+    LIST: '/api/notes/',
+    GET: (id: string) => `/api/notes/${id}`,
+    CREATE: '/api/notes/',
+    UPDATE: (id: string) => `/api/notes/${id}`,
+    DELETE: (id: string) => `/api/notes/${id}`,
   },
   // Поиск
   SEARCH: {
-    QUERY: '/api/search/search/',
+    QUERY: '/api/search/',
   },
   // Запись
   RECORDER: {
