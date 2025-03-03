@@ -46,4 +46,9 @@ temp/
 # Аудио файлы
 backend/audio/*.wav
 backend/audio/*.mp3
-backend/audio/*.ogg 
+backend/audio/*.ogg
+
+# Файлы с секретами и переменными окружения
+.env
+.env.*
+!.env.example 
