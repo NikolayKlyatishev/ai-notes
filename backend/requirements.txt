@@ -3,6 +3,13 @@ flask==2.2.3
 python-dotenv==1.0.0
 pydub==0.25.1
 
+# OAuth2 зависимости
+authlib==1.3.0
+requests==2.31.0
+python-jose==3.3.0
+passlib==1.7.4
+bcrypt==4.1.2
+
 # Whisper и зависимости
 openai-whisper==20231117
 PyAudio==0.2.13

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
 
 # Distribution / packaging
 dist/
@@ -10,6 +12,7 @@ build/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
@@ -26,4 +29,21 @@ templates/
 .vscode/
 
 # macOS
-.DS_Store 
+.DS_Store
+
+# Кэш и конфигурация Poetry
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+poetry.lock
+
+# Логи и временные файлы
+tmp/
+temp/
+.mypy_cache/
+
+# Аудио файлы
+backend/audio/*.wav
+backend/audio/*.mp3
+backend/audio/*.ogg 
