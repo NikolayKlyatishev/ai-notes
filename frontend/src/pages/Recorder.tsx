@@ -75,7 +75,7 @@ const Recorder: React.FC = () => {
 
     // Обновление таймера
     useEffect(() => {
-        let timer: NodeJS.Timeout | null = null;
+        let timer: number | undefined = undefined;
 
         if (recorderStatus?.is_recording) {
             timer = setInterval(() => {

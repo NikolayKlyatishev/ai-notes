@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-notes"
+version = "0.1.0"
+description = "AI Notes - приложение для работы с заметками с использованием ИИ"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=2.2.3",
+    "python-dotenv>=1.0.0",
+    "pydub>=0.25.1",
+    "authlib>=1.3.0",
+    "requests>=2.31.0",
+    "python-jose>=3.3.0",
+    "passlib>=1.7.4",
+    "bcrypt>=4.1.2",
+    "numpy>=1.24.2",
+    "click>=8.1.7",
+    "fastapi>=0.104.1",
+    "uvicorn>=0.24.0",
+    "jiwer>=3.0.3",
+    "python-json-logger>=2.0.7",
+    "python-multipart>=0.0.9",
+    "nltk>=3.8.1",
+    "pymorphy2>=0.9.1",
+    "scikit-learn>=1.3.2",
+    "llvmlite==0.44.0",
+    "pyjwt>=2.10.1",
+    "httpx>=0.28.1",
+]
+
+[project.optional-dependencies]
+transcription = [
+    "openai-whisper>=20231117",
+    "PyAudio>=0.2.13",
+    "sounddevice>=0.4.6",
+    "webrtcvad>=2.0.10",
+    "torch==2.0.1",
+]
+
+[tool.setuptools]
+packages = ["backend"]
+
+# Конфигурации для CI/CD и инструментов анализа кода
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = "E203"
+exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false 

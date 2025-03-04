@@ -1,206 +1,260 @@
+#!/usr/bin/env python3
 """
-Главный модуль приложения AI Notes, интегрирующий API-сервер и сервисы для работы с заметками.
+Файл запуска бэкенд-приложения.
+Запускает бэкенд-сервер, который обслуживает API.
 """
 import os
 import sys
-import time
-import signal
-import logging
 import argparse
-import threading
+import uvicorn
 from pathlib import Path
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import RedirectResponse
 
-# Добавляем корневую директорию в путь импорта
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Создаем экземпляр FastAPI
+app = FastAPI(
+    title="AI Notes API",
+    description="API для системы автоматической фиксации разговоров",
+    version="0.1.0"
+)
 
-from backend.core.logger import setup_logger
-from backend.core.config import WEB_HOST, WEB_PORT
+# Настройка разрешенных источников для CORS
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Dev React (стандартный порт)
+    "http://localhost:8000",  # Dev Backend
+    "http://localhost:5173",  # Dev React (Vite порт)
+    "http://localhost:5174",  # Vite альтернативный порт
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
 
-# Настройка логирования
-logger = setup_logger("backend.app")
+# Добавление middleware для CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Флаг для отслеживания состояния приложения
-running = True
-
-
-def signal_handler(sig, frame):
+# Корневой маршрут перенаправляет на /docs
+@app.get("/")
+async def root():
     """
-    Обработчик сигналов для корректного завершения приложения.
-    
-    Args:
-        sig: Сигнал
-        frame: Фрейм выполнения
+    Корневой маршрут перенаправляет на документацию API.
     """
-    global running
-    logger.info(f"Получен сигнал {sig}, завершение работы...")
-    running = False
+    return RedirectResponse(url="/docs")
 
-
-def parse_args():
+# Маршрут проверки работоспособности
+@app.get("/api/health")
+async def health_check():
     """
-    Парсинг аргументов командной строки.
-    
-    Returns:
-        argparse.Namespace: Аргументы командной строки
+    Проверка работоспособности API.
     """
-    parser = argparse.ArgumentParser(description="AI Notes - система автоматической фиксации разговоров")
-    
-    # Создание группы взаимоисключающих аргументов
-    group = parser.add_mutually_exclusive_group(required=True)
-    
-    # Добавление аргументов
-    group.add_argument("--all", action="store_true", help="Запустить API-сервер и фоновые сервисы")
-    group.add_argument("--api", action="store_true", help="Запустить только API-сервер")
-    group.add_argument("--recorder", action="store_true", help="Запустить только рекордер")
-    group.add_argument("--recorder-continuous", action="store_true", help="Запустить рекордер в непрерывном режиме")
-    
-    return parser.parse_args()
+    return {"status": "ok", "message": "API работает"}
 
-
-def import_api():
+# Маршрут для проверки статуса API
+@app.get("/api/status")
+async def api_status():
     """
-    Импорт API-сервера.
+    Возвращает информацию о статусе API.
+    """
+    return {
+        "status": "ok",
+        "version": app.version,
+        "name": app.title,
+    }
+
+# Маршрут для проверки статуса аутентификации
+@app.get("/api/auth/status")
+async def auth_status(request: Request):
+    """
+    Проверка статуса аутентификации пользователя.
+    """
+    token = request.session.get("token")
+    if not token:
+        return {"authenticated": False}
     
-    Returns:
-        module: API-приложение
+    try:
+        from backend.api.auth import decode_token
+        user_data = decode_token(token)
+        return {
+            "authenticated": True,
+            "user": user_data
+        }
+    except Exception:
+        request.session.pop("token", None)
+        return {"authenticated": False}
+
+# Маршруты OAuth для Google
+@app.get("/api/auth/login/google")
+async def api_login_google(request: Request):
+    """
+    Начало процесса аутентификации через Google.
+    """
+    from backend.api.auth import oauth
+    if "google" not in oauth._clients:
+        return {"error": "Аутентификация через Google не настроена"}
+    
+    redirect_uri = f"http://localhost:8080/api/auth/auth/google"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/api/auth/auth/google")
+async def api_auth_google(request: Request):
+    """
+    Завершение процесса аутентификации через Google.
+    """
+    from backend.api.auth import oauth, create_token
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user = await oauth.google.parse_id_token(request, token)
+        
+        # Сохраняем информацию о пользователе в сессии
+        user_data = {
+            "id": user.get("sub", ""),
+            "email": user.get("email", ""),
+            "name": user.get("name", ""),
+            "picture": user.get("picture", ""),
+            "provider": "google"
+        }
+        
+        session_token = create_token(user_data)
+        request.session["token"] = session_token
+        
+        # Редирект на главную страницу после успешной аутентификации
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(url=f"{frontend_url}/")
+    except Exception as e:
+        print(f"Google OAuth ошибка: {e}")
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(url=f"{frontend_url}/login?error=auth_failed")
+
+# Маршруты OAuth для Yandex
+@app.get("/api/auth/login/yandex")
+async def api_login_yandex(request: Request):
+    """
+    Начало процесса аутентификации через Yandex.
+    """
+    from backend.api.auth import oauth
+    if "yandex" not in oauth._clients:
+        return {"error": "Аутентификация через Yandex не настроена"}
+    
+    redirect_uri = f"http://localhost:8080/api/auth/auth/yandex"
+    return await oauth.yandex.authorize_redirect(request, redirect_uri)
+
+@app.get("/api/auth/auth/yandex")
+async def api_auth_yandex(request: Request):
+    """
+    Завершение процесса аутентификации через Yandex.
+    """
+    from backend.api.auth import oauth, create_token
+    try:
+        token = await oauth.yandex.authorize_access_token(request)
+        resp = await oauth.yandex.get("", token=token)
+        user_info = resp.json()
+        
+        # Сохраняем информацию о пользователе в сессии
+        user_data = {
+            "id": str(user_info.get("id", "")),
+            "email": user_info.get("default_email", ""),
+            "name": user_info.get("real_name", user_info.get("display_name", "")),
+            "picture": "",  # Yandex не предоставляет аватар напрямую
+            "provider": "yandex"
+        }
+        
+        session_token = create_token(user_data)
+        request.session["token"] = session_token
+        
+        # Редирект на главную страницу после успешной аутентификации
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(url=f"{frontend_url}/")
+    except Exception as e:
+        print(f"Yandex OAuth ошибка: {e}")
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        return RedirectResponse(url=f"{frontend_url}/login?error=auth_failed")
+
+def init_api_routes():
+    """
+    Инициализирует и подключает все API маршруты
     """
     try:
-        from backend.web.app import app as api_app
-        return api_app
+        # Импорт необходимых модулей
+        from backend.core.config import JWT_SECRET_KEY
+        from backend.api.auth import router as auth_router, setup_oauth
+        from backend.api.recorder import router as recorder_router
+        from backend.api.search import router as search_router
+        from backend.api.notes import router as notes_router
+        
+        # Добавление middleware для сессий если еще не добавлен
+        if "SessionMiddleware" not in [m.__class__.__name__ for m in app.user_middleware]:
+            app.add_middleware(
+                SessionMiddleware,
+                secret_key=JWT_SECRET_KEY,
+                max_age=3600,  # 1 час
+            )
+        
+        # Инициализация OAuth
+        setup_oauth(app)
+        
+        # Подключение API-маршрутов
+        app.include_router(recorder_router, prefix="/api/recorder", tags=["recorder"])
+        app.include_router(search_router, prefix="/api/search", tags=["search"])
+        app.include_router(notes_router, prefix="/api/notes", tags=["notes"])
+        
+        print("API маршруты успешно инициализированы")
     except ImportError as e:
-        logger.error(f"Ошибка импорта API-модуля: {e}")
-        return None
-
-
-def import_recorder():
-    """
-    Импорт модуля рекордера.
-    
-    Returns:
-        module: Модуль рекордера
-    """
-    try:
-        from backend.services.recorder import record_and_transcribe
-        return record_and_transcribe
-    except ImportError as e:
-        logger.error(f"Ошибка импорта модуля рекордера: {e}")
-        return None
-
-
-def run_api():
-    """
-    Запуск API-сервера.
-    
-    Returns:
-        bool: True, если запуск успешен, иначе False
-    """
-    try:
-        api_app = import_api()
-        
-        if not api_app:
-            logger.error("Не удалось импортировать API-модуль")
-            return False
-        
-        import uvicorn
-        
-        logger.info(f"Запуск API-сервера на {WEB_HOST}:{WEB_PORT}")
-        uvicorn.run(api_app, host=WEB_HOST, port=WEB_PORT)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при запуске API-сервера: {e}")
-        return False
-
-
-def run_recorder(continuous=False):
-    """
-    Запуск рекордера.
-    
-    Args:
-        continuous (bool): Флаг непрерывного режима
-        
-    Returns:
-        bool: True, если запуск успешен, иначе False
-    """
-    try:
-        record_and_transcribe = import_recorder()
-        
-        if not record_and_transcribe:
-            logger.error("Не удалось импортировать модуль рекордера")
-            return False
-        
-        logger.info(f"Запуск рекордера в {'непрерывном' if continuous else 'обычном'} режиме")
-        
-        while running:
-            record_and_transcribe(continuous=continuous)
-            
-            if not continuous:
-                break
-            
-            # Пауза между записями в непрерывном режиме
-            time.sleep(1)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при запуске рекордера: {e}")
-        return False
-
-
-def run_all():
-    """
-    Запуск всех компонентов приложения.
-    
-    Returns:
-        bool: True, если запуск успешен, иначе False
-    """
-    try:
-        # Запуск API-сервера в отдельном потоке
-        api_thread = threading.Thread(target=run_api)
-        api_thread.daemon = True
-        api_thread.start()
-        
-        logger.info("API-сервер запущен в отдельном потоке")
-        
-        # Запуск рекордера в основном потоке
-        run_recorder(continuous=True)
-        
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка при запуске всех компонентов: {e}")
-        return False
-
+        print(f"Ошибка при инициализации API маршрутов: {e}")
+        # Продолжаем работу с базовыми маршрутами
 
 def main():
     """
-    Основная функция приложения.
+    Основная функция запуска приложения
     """
-    # Регистрация обработчиков сигналов
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    parser = argparse.ArgumentParser(description="Запуск бэкенд-сервера AI Notes")
+    parser.add_argument("--api", action="store_true", help="Запустить только API-сервер")
+    parser.add_argument("--port", type=int, default=8080, help="Порт для запуска API-сервера")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Хост для запуска API-сервера")
+    args = parser.parse_args()
     
-    # Парсинг аргументов командной строки
-    args = parse_args()
+    print("Запуск бэкенд-сервера в режиме API" if args.api else "Запуск полного бэкенд-сервера")
+    
+    # Обработка ошибки с whisper
+    try:
+        import whisper
+    except ImportError:
+        print("Ошибка импорта локального whisper: No module named 'whisper'")
+        print("Функции транскрипции будут недоступны")
+    
+    # Инициализация маршрутов API
+    init_api_routes()
     
     try:
-        if args.all:
-            logger.info("Запуск API-сервера и фоновых сервисов")
-            run_all()
-        elif args.api:
-            logger.info("Запуск только API-сервера")
-            run_api()
-        elif args.recorder:
-            logger.info("Запуск только рекордера")
-            run_recorder(continuous=False)
-        elif args.recorder_continuous:
-            logger.info("Запуск рекордера в непрерывном режиме")
-            run_recorder(continuous=True)
-    except KeyboardInterrupt:
-        logger.info("Получен сигнал прерывания, завершение работы...")
-    except Exception as e:
-        logger.error(f"Необработанная ошибка: {e}")
-    finally:
-        logger.info("Приложение завершило работу")
-
+        # Запускаем uvicorn сервер
+        uvicorn.run(
+            "backend.app:app",
+            host=args.host,
+            port=args.port,
+            reload=True,
+            log_level="info"
+        )
+    except OSError as e:
+        if "Address already in use" in str(e):
+            alt_port = args.port + 1
+            print(f"Порт {args.port} уже используется. Пробуем порт {alt_port}...")
+            uvicorn.run(
+                "backend.app:app",
+                host=args.host,
+                port=alt_port,
+                reload=True,
+                log_level="info"
+            )
+        else:
+            raise
 
 if __name__ == "__main__":
+    # Запускаем приложение
     main() 
