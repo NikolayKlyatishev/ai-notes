@@ -136,6 +136,9 @@ def setup_oauth(app: FastAPI) -> None:
     Args:
         app (FastAPI): Приложение FastAPI
     """
+    print(f"GOOGLE_CLIENT_ID: {GOOGLE_CLIENT_ID}")
+    print(f"GOOGLE_CLIENT_SECRET: {GOOGLE_CLIENT_SECRET}")
+    
     # Настройка Google OAuth
     if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         oauth.register(
@@ -146,8 +149,10 @@ def setup_oauth(app: FastAPI) -> None:
             client_kwargs={"scope": "openid email profile"}
         )
         logger.info("Настроена аутентификация через Google")
+        print(f"Google OAuth клиент зарегистрирован: {oauth._clients}")
     else:
         logger.warning("Отсутствуют учетные данные для Google OAuth")
+        print("Отсутствуют учетные данные для Google OAuth")
     
     # Настройка Yandex OAuth
     if YANDEX_CLIENT_ID and YANDEX_CLIENT_SECRET:

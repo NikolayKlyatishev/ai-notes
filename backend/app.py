@@ -41,6 +41,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Добавление middleware для сессий
+from backend.core.config import JWT_SECRET_KEY
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=JWT_SECRET_KEY,
+    max_age=3600,  # 1 час
+)
+
 # Корневой маршрут перенаправляет на /docs
 @app.get("/")
 async def root():
@@ -97,8 +105,25 @@ async def api_login_google(request: Request):
     Начало процесса аутентификации через Google.
     """
     from backend.api.auth import oauth
+    print(f"OAuth clients: {oauth._clients}")
+    print(f"OAuth clients keys: {list(oauth._clients.keys())}")
+    print(f"OAuth clients values: {list(oauth._clients.values())}")
+    
+    # Проверяем, что клиент Google существует
     if "google" not in oauth._clients:
-        return {"error": "Аутентификация через Google не настроена"}
+        # Пробуем инициализировать клиент Google напрямую
+        from backend.core.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+        if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+            oauth.register(
+                name="google",
+                client_id=GOOGLE_CLIENT_ID,
+                client_secret=GOOGLE_CLIENT_SECRET,
+                server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+                client_kwargs={"scope": "openid email profile"}
+            )
+            print(f"Google OAuth клиент зарегистрирован напрямую: {oauth._clients}")
+        else:
+            return {"error": "Аутентификация через Google не настроена"}
     
     redirect_uri = f"http://localhost:8080/api/auth/auth/google"
     return await oauth.google.authorize_redirect(request, redirect_uri)
@@ -140,8 +165,25 @@ async def api_login_yandex(request: Request):
     Начало процесса аутентификации через Yandex.
     """
     from backend.api.auth import oauth
+    print(f"OAuth clients: {oauth._clients}")
+    
+    # Проверяем, что клиент Yandex существует
     if "yandex" not in oauth._clients:
-        return {"error": "Аутентификация через Yandex не настроена"}
+        # Пробуем инициализировать клиент Yandex напрямую
+        from backend.core.config import YANDEX_CLIENT_ID, YANDEX_CLIENT_SECRET
+        if YANDEX_CLIENT_ID and YANDEX_CLIENT_SECRET:
+            oauth.register(
+                name="yandex",
+                client_id=YANDEX_CLIENT_ID,
+                client_secret=YANDEX_CLIENT_SECRET,
+                authorize_url="https://oauth.yandex.ru/authorize",
+                access_token_url="https://oauth.yandex.ru/token",
+                api_base_url="https://login.yandex.ru/info",
+                client_kwargs={"scope": "login:email login:info"}
+            )
+            print(f"Yandex OAuth клиент зарегистрирован напрямую: {oauth._clients}")
+        else:
+            return {"error": "Аутентификация через Yandex не настроена"}
     
     redirect_uri = f"http://localhost:8080/api/auth/auth/yandex"
     return await oauth.yandex.authorize_redirect(request, redirect_uri)
