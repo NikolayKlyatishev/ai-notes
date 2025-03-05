@@ -121,16 +121,28 @@ async def api_login_google(request: Request):
                 client_id=GOOGLE_CLIENT_ID,
                 client_secret=GOOGLE_CLIENT_SECRET,
                 server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-                client_kwargs={"scope": "openid email profile"}
+                client_kwargs={
+                    "scope": "openid email profile",
+                    "prompt": "select_account",  # Принудительно показывать выбор аккаунта
+                    "access_type": "offline",    # Получить refresh token для длительного доступа
+                    "include_granted_scopes": "true"  # Включить ранее предоставленные разрешения
+                }
             )
             print(f"Google OAuth клиент зарегистрирован напрямую: {oauth._clients}")
         else:
             return {"error": "Аутентификация через Google не настроена"}
     
+    # Добавляем детальное логирование для отладки
+    print(f"Google redirect URI из .env: {GOOGLE_REDIRECT_URI}")
+    print(f"Базовый URL запроса: {request.base_url}")
+    
     # Используем значение из .env вместо жестко закодированного URL
-    return await oauth.google.authorize_redirect(request, GOOGLE_REDIRECT_URI)
+    redirect_response = await oauth.google.authorize_redirect(request, GOOGLE_REDIRECT_URI)
+    print(f"Фактический URL перенаправления: {redirect_response.headers.get('location')}")
+    
+    return redirect_response
 
-@app.get("/api/auth/login/google")
+@app.get("/api/auth/callback/google")
 async def api_auth_google(request: Request):
     """
     Завершение процесса аутентификации через Google.
@@ -138,17 +150,29 @@ async def api_auth_google(request: Request):
     from backend.api.auth import oauth, create_token
     try:
         token = await oauth.google.authorize_access_token(request)
-        user = await oauth.google.parse_id_token(request, token)
+        print(f"Полученный токен от Google: {token}")
+        
+        # Вместо парсинга id_token используем напрямую информацию из userinfo
+        # Многие версии authlib автоматически извлекают данные пользователя в token['userinfo']
+        if 'userinfo' in token:
+            user = token['userinfo']
+            print(f"Использую токен userinfo: {user}")
+        else:
+            # Получаем информацию через userinfo endpoint
+            resp = await oauth.google.get('https://www.googleapis.com/oauth2/v3/userinfo', token=token)
+            user = resp.json()
+            print(f"Информация о пользователе Google из запроса: {user}")
         
         # Сохраняем информацию о пользователе в сессии
         user_data = {
-            "id": user.get("sub", ""),
+            "id": user.get("sub", user.get("id", "")),
             "email": user.get("email", ""),
             "name": user.get("name", ""),
             "picture": user.get("picture", ""),
             "provider": "google"
         }
         
+        print(f"Данные пользователя для создания токена: {user_data}")
         session_token = create_token(user_data)
         request.session["token"] = session_token
         
@@ -157,6 +181,8 @@ async def api_auth_google(request: Request):
         return RedirectResponse(url=f"{frontend_url}/")
     except Exception as e:
         print(f"Google OAuth ошибка: {e}")
+        print(f"Детали запроса: {request.url}")
+        print(f"Параметры запроса: {request.query_params}")
         frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
         return RedirectResponse(url=f"{frontend_url}/login?error=auth_failed")
 
@@ -192,7 +218,7 @@ async def api_login_yandex(request: Request):
     # Используем значение из .env вместо жестко закодированного URL
     return await oauth.yandex.authorize_redirect(request, YANDEX_REDIRECT_URI)
 
-@app.get("/api/auth/auth/yandex")
+@app.get("/api/auth/callback/yandex")
 async def api_auth_yandex(request: Request):
     """
     Завершение процесса аутентификации через Yandex.
