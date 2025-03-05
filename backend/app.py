@@ -105,6 +105,8 @@ async def api_login_google(request: Request):
     Начало процесса аутентификации через Google.
     """
     from backend.api.auth import oauth
+    from backend.core.config import GOOGLE_REDIRECT_URI
+    
     print(f"OAuth clients: {oauth._clients}")
     print(f"OAuth clients keys: {list(oauth._clients.keys())}")
     print(f"OAuth clients values: {list(oauth._clients.values())}")
@@ -125,10 +127,10 @@ async def api_login_google(request: Request):
         else:
             return {"error": "Аутентификация через Google не настроена"}
     
-    redirect_uri = f"http://localhost:8080/api/auth/auth/google"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # Используем значение из .env вместо жестко закодированного URL
+    return await oauth.google.authorize_redirect(request, GOOGLE_REDIRECT_URI)
 
-@app.get("/api/auth/auth/google")
+@app.get("/api/auth/login/google")
 async def api_auth_google(request: Request):
     """
     Завершение процесса аутентификации через Google.
@@ -165,6 +167,8 @@ async def api_login_yandex(request: Request):
     Начало процесса аутентификации через Yandex.
     """
     from backend.api.auth import oauth
+    from backend.core.config import YANDEX_REDIRECT_URI
+    
     print(f"OAuth clients: {oauth._clients}")
     
     # Проверяем, что клиент Yandex существует
@@ -185,8 +189,8 @@ async def api_login_yandex(request: Request):
         else:
             return {"error": "Аутентификация через Yandex не настроена"}
     
-    redirect_uri = f"http://localhost:8080/api/auth/auth/yandex"
-    return await oauth.yandex.authorize_redirect(request, redirect_uri)
+    # Используем значение из .env вместо жестко закодированного URL
+    return await oauth.yandex.authorize_redirect(request, YANDEX_REDIRECT_URI)
 
 @app.get("/api/auth/auth/yandex")
 async def api_auth_yandex(request: Request):
