@@ -18,6 +18,24 @@ AUDIO_DIR = BACKEND_DIR / "audio"
 NOTES_DIR.mkdir(exist_ok=True)
 AUDIO_DIR.mkdir(exist_ok=True)
 
+# Настройки веб-сервера
+WEB_HOST = os.getenv('WEB_HOST', '0.0.0.0')
+WEB_PORT = int(os.getenv('WEB_PORT', 8080))
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+
+# Настройка разрешенных источников для CORS
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Dev React (стандартный порт)
+    "http://localhost:8000",  # Dev Backend
+    "http://localhost:5173",  # Dev React (Vite порт)
+    "http://localhost:5174",  # Vite альтернативный порт
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    FRONTEND_URL,  # Динамический URL фронтенда из переменных окружения
+]
+
 # Параметры аудиозаписи
 SAMPLE_RATE = 16000  # Частота дискретизации в Гц
 CHANNELS = 1  # Моно запись
@@ -54,10 +72,6 @@ YANDEX_CLIENT_SECRET = os.getenv('YANDEX_CLIENT_SECRET')
 YANDEX_REDIRECT_URI = os.getenv('YANDEX_REDIRECT_URI')
 
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')
-
-# Настройки веб-сервера
-WEB_HOST = os.getenv('WEB_HOST', '0.0.0.0')
-WEB_PORT = int(os.getenv('WEB_PORT', 8080))
 
 # Настройки логирования
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')

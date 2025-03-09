@@ -7,7 +7,7 @@ name = "ai-notes"
 version = "0.1.0"
 description = "AI Notes - приложение для работы с заметками с использованием ИИ"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Klyatyshev Nikolay", email = "nklyatyshev@yandex.ru"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,7 +45,7 @@ transcription = [
 ]
 
 [tool.setuptools]
-packages = ["backend"]
+packages.find = {}
 
 # Конфигурации для CI/CD и инструментов анализа кода
 [tool.black]

@@ -13,7 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.core.logger import setup_logger
 from backend.models.note import NoteCreate, NoteUpdate, NoteResponse
-from backend.services.notes import notes_service
+from backend.services.notes import NotesService
 from backend.api.auth import get_current_user
 
 # Настройка логирования
@@ -23,8 +23,15 @@ logger = setup_logger("backend.api.notes")
 router = APIRouter(
     prefix="/notes",
     tags=["notes"],
-    responses={404: {"description": "Заметка не найдена"}},
+    responses={
+        404: {"description": "Заметка не найдена"},
+        401: {"description": "Требуется аутентификация"},
+        500: {"description": "Внутренняя ошибка сервера"}
+    },
 )
+
+# Создание экземпляра сервиса заметок
+notes_service = NotesService()
 
 
 @router.get("/", response_model=List[NoteResponse])
@@ -37,6 +44,9 @@ async def get_notes(current_user: dict = Depends(get_current_user)):
         
     Returns:
         List[NoteResponse]: Список всех заметок
+        
+    Raises:
+        HTTPException: Если произошла ошибка при получении заметок
     """
     logger.info(f"Запрос на получение всех заметок от пользователя {current_user.get('email')}")
     
@@ -62,6 +72,9 @@ async def get_note(note_id: str, current_user: dict = Depends(get_current_user))
         
     Returns:
         NoteResponse: Заметка
+        
+    Raises:
+        HTTPException: Если заметка не найдена или произошла ошибка при получении заметки
     """
     logger.info(f"Запрос на получение заметки {note_id} от пользователя {current_user.get('email')}")
     
@@ -106,11 +119,15 @@ async def create_note(note: NoteCreate, current_user: dict = Depends(get_current
         current_user (dict): Информация о текущем пользователе
         
     Returns:
-        dict: Идентификатор созданной заметки
+        dict: Информация о созданной заметке
+        
+    Raises:
+        HTTPException: Если произошла ошибка при создании заметки
     """
     logger.info(f"Запрос на создание заметки от пользователя {current_user.get('email')}")
     
     try:
+        # Создание заметки
         note_id = notes_service.create_note(note)
         
         if not note_id:
@@ -120,13 +137,19 @@ async def create_note(note: NoteCreate, current_user: dict = Depends(get_current
                 detail="Не удалось создать заметку"
             )
         
-        logger.info(f"Заметка успешно создана с идентификатором {note_id}")
-        return {"id": note_id, "message": "Заметка успешно создана"}
+        logger.info(f"Создана заметка с идентификатором {note_id}")
+        
+        return {
+            "id": note_id,
+            "message": "Заметка успешно создана"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Ошибка при создании заметки: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ошибка при создании заметки"
+            detail=f"Ошибка при создании заметки: {str(e)}"
         )
 
 
@@ -141,7 +164,10 @@ async def update_note(note_id: str, note: NoteUpdate, current_user: dict = Depen
         current_user (dict): Информация о текущем пользователе
         
     Returns:
-        dict: Сообщение об успешном обновлении
+        dict: Информация об обновленной заметке
+        
+    Raises:
+        HTTPException: Если заметка не найдена или произошла ошибка при обновлении заметки
     """
     logger.info(f"Запрос на обновление заметки {note_id} от пользователя {current_user.get('email')}")
     
@@ -166,15 +192,19 @@ async def update_note(note_id: str, note: NoteUpdate, current_user: dict = Depen
                 detail=f"Не удалось обновить заметку {note_id}"
             )
         
-        logger.info(f"Заметка {note_id} успешно обновлена")
-        return {"message": f"Заметка {note_id} успешно обновлена"}
+        logger.info(f"Обновлена заметка с идентификатором {note_id}")
+        
+        return {
+            "id": note_id,
+            "message": "Заметка успешно обновлена"
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Ошибка при обновлении заметки {note_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при обновлении заметки {note_id}"
+            detail=f"Ошибка при обновлении заметки {note_id}: {str(e)}"
         )
 
 
@@ -188,7 +218,10 @@ async def delete_note(note_id: str, current_user: dict = Depends(get_current_use
         current_user (dict): Информация о текущем пользователе
         
     Returns:
-        dict: Сообщение об успешном удалении
+        dict: Информация об удаленной заметке
+        
+    Raises:
+        HTTPException: Если заметка не найдена или произошла ошибка при удалении заметки
     """
     logger.info(f"Запрос на удаление заметки {note_id} от пользователя {current_user.get('email')}")
     
@@ -213,13 +246,17 @@ async def delete_note(note_id: str, current_user: dict = Depends(get_current_use
                 detail=f"Не удалось удалить заметку {note_id}"
             )
         
-        logger.info(f"Заметка {note_id} успешно удалена")
-        return {"message": f"Заметка {note_id} успешно удалена"}
+        logger.info(f"Удалена заметка с идентификатором {note_id}")
+        
+        return {
+            "id": note_id,
+            "message": "Заметка успешно удалена"
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Ошибка при удалении заметки {note_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при удалении заметки {note_id}"
+            detail=f"Ошибка при удалении заметки {note_id}: {str(e)}"
         ) 

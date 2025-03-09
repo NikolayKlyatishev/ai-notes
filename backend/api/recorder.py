@@ -21,14 +21,18 @@ from pydantic import BaseModel
 
 from backend.core.logger import setup_logger
 from backend.core.config import AUDIO_DIR, NOTES_DIR
-from backend.api.auth import login_required
+from backend.api.auth import get_current_user
 from backend.services.recorder import record_and_transcribe
 
 # Настройка логирования
 logger = setup_logger("backend.api.recorder")
 
 # Создаем роутер
-router = APIRouter()
+router = APIRouter(
+    prefix="/recorder",
+    tags=["recorder"],
+    responses={401: {"description": "Требуется аутентификация"}}
+)
 
 # Глобальные переменные для управления рекордером
 recorder_process = None
@@ -167,7 +171,7 @@ async def status_updater():
 
 # API маршруты
 @router.get("/status/stream")
-async def stream_status(user = Depends(login_required)):
+async def stream_status(user = Depends(get_current_user)):
     """
     Стриминг статуса рекордера через SSE (Server-Sent Events).
     """
@@ -206,7 +210,7 @@ async def stream_status(user = Depends(login_required)):
 
 
 @router.get("/status")
-async def get_recorder_status(user = Depends(login_required)):
+async def get_recorder_status(user = Depends(get_current_user)):
     """
     Получение текущего статуса рекордера.
     """
@@ -234,7 +238,7 @@ async def get_recorder_status(user = Depends(login_required)):
 
 
 @router.post("/start", response_model=RecorderResponse)
-async def start_recorder(params: RecorderStartParams, user = Depends(login_required)):
+async def start_recorder(params: RecorderStartParams, user = Depends(get_current_user)):
     """
     Запуск рекордера.
     """
@@ -276,7 +280,7 @@ async def start_recorder(params: RecorderStartParams, user = Depends(login_requi
 
 
 @router.post("/stop", response_model=RecorderResponse)
-async def stop_recorder(background_tasks: BackgroundTasks, user = Depends(login_required)):
+async def stop_recorder(background_tasks: BackgroundTasks, user = Depends(get_current_user)):
     """
     Остановка рекордера.
     """
@@ -299,7 +303,7 @@ async def stop_recorder(background_tasks: BackgroundTasks, user = Depends(login_
 async def transcribe_all(
     params: RecorderTranscribeParams,
     background_tasks: BackgroundTasks,
-    user = Depends(login_required)
+    user = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Транскрибация всех записанных аудио-файлов.
@@ -336,7 +340,7 @@ async def transcribe_all(
 
 
 @router.get("/recordings")
-async def get_recordings(user = Depends(login_required)):
+async def get_recordings(user = Depends(get_current_user)):
     """
     Получение списка записанных аудио-файлов и соответствующих заметок.
     """

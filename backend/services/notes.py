@@ -108,7 +108,7 @@ class NotesService:
             # Создание объекта Note
             note = Note(**note_data)
             
-            logger.info(f"Заметка с идентификатором {note_id} успешно получена")
+            logger.info(f"Получена заметка с идентификатором {note_id}")
             return note
         except Exception as e:
             logger.error(f"Ошибка при получении заметки {note_id}: {e}")
@@ -122,38 +122,39 @@ class NotesService:
             note_data (Union[NoteCreate, Dict[str, Any]]): Данные для создания заметки
             
         Returns:
-            Optional[str]: Идентификатор созданной заметки или None в случае ошибки
+            Optional[str]: Идентификатор созданной заметки или None, если произошла ошибка
         """
         try:
-            # Преобразование словаря в объект NoteCreate, если необходимо
-            if isinstance(note_data, dict):
-                note_data = NoteCreate(**note_data)
+            # Преобразование note_data в словарь, если это объект Pydantic
+            if hasattr(note_data, "model_dump"):
+                note_dict = note_data.model_dump()
+            else:
+                note_dict = dict(note_data)
             
-            # Создание идентификатора заметки на основе текущей даты и времени
-            timestamp = datetime.now()
-            note_id = f"note_{timestamp.strftime('%Y%m%d_%H%M%S')}"
-            
-            # Создание полных данных заметки
+            # Создание объекта Note с текущей датой
             note = Note(
-                date=timestamp,
-                transcript=note_data.transcript,
-                audio_file=note_data.audio_file,
+                date=datetime.now(),
+                transcript=note_dict.get("transcript", ""),
                 tags=[],
                 keyphrases=[],
                 speakers=[],
                 categories=[],
                 purpose=None,
-                topics=[]
+                topics=[],
+                audio_file=note_dict.get("audio_file")
             )
+            
+            # Генерация идентификатора заметки на основе даты
+            note_id = f"note_{note.date.strftime('%Y%m%d_%H%M%S')}"
             
             # Формирование пути к файлу заметки
             note_path = self.notes_dir / f"{note_id}.json"
             
             # Сохранение заметки в файл
             with open(note_path, 'w', encoding='utf-8') as f:
-                json.dump(note.dict(), f, ensure_ascii=False, indent=2, default=str)
+                json.dump(note.model_dump(), f, ensure_ascii=False, default=str, indent=2)
             
-            logger.info(f"Создана новая заметка с идентификатором {note_id}")
+            logger.info(f"Создана заметка с идентификатором {note_id}")
             return note_id
         except Exception as e:
             logger.error(f"Ошибка при создании заметки: {e}")
@@ -175,32 +176,33 @@ class NotesService:
             existing_note = self.get_note_by_id(note_id)
             
             if not existing_note:
-                logger.warning(f"Невозможно обновить заметку: заметка с идентификатором {note_id} не найдена")
+                logger.warning(f"Заметка с идентификатором {note_id} не найдена")
                 return False
             
-            # Преобразование словаря в объект NoteUpdate, если необходимо
-            if isinstance(note_data, dict):
-                note_data = NoteUpdate(**note_data)
+            # Преобразование note_data в словарь, если это объект Pydantic
+            if hasattr(note_data, "model_dump"):
+                update_dict = note_data.model_dump(exclude_unset=True)
+            else:
+                update_dict = dict(note_data)
             
             # Обновление полей заметки
-            note_dict = existing_note.dict()
-            update_data = note_data.dict(exclude_unset=True)
+            existing_note_dict = existing_note.model_dump()
             
-            for field, value in update_data.items():
-                if value is not None:
-                    note_dict[field] = value
+            for key, value in update_dict.items():
+                if value is not None:  # Обновляем только непустые поля
+                    existing_note_dict[key] = value
             
             # Создание обновленного объекта Note
-            updated_note = Note(**note_dict)
+            updated_note = Note(**existing_note_dict)
             
             # Формирование пути к файлу заметки
             note_path = self.notes_dir / f"{note_id}.json"
             
             # Сохранение обновленной заметки в файл
             with open(note_path, 'w', encoding='utf-8') as f:
-                json.dump(updated_note.dict(), f, ensure_ascii=False, indent=2, default=str)
+                json.dump(updated_note.model_dump(), f, ensure_ascii=False, default=str, indent=2)
             
-            logger.info(f"Заметка с идентификатором {note_id} успешно обновлена")
+            logger.info(f"Обновлена заметка с идентификатором {note_id}")
             return True
         except Exception as e:
             logger.error(f"Ошибка при обновлении заметки {note_id}: {e}")
@@ -222,13 +224,13 @@ class NotesService:
             
             # Проверка существования файла
             if not note_path.exists():
-                logger.warning(f"Невозможно удалить заметку: заметка с идентификатором {note_id} не найдена")
+                logger.warning(f"Заметка с идентификатором {note_id} не найдена")
                 return False
             
             # Удаление файла
             note_path.unlink()
             
-            logger.info(f"Заметка с идентификатором {note_id} успешно удалена")
+            logger.info(f"Удалена заметка с идентификатором {note_id}")
             return True
         except Exception as e:
             logger.error(f"Ошибка при удалении заметки {note_id}: {e}")
